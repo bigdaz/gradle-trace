@@ -1,0 +1,12 @@
+initscript {
+    repositories {
+        mavenLocal()
+    }
+    dependencies {
+        classpath "org.gradle:gradle-trace:0.1-SNAPSHOT"
+    }
+}
+
+rootProject {
+    apply plugin: org.gradle.trace.GradleTracingPlugin
+}

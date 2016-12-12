@@ -1,6 +1,7 @@
 apply plugin: "java-gradle-plugin"
+apply plugin: "maven-publish"
 apply plugin: "idea"
 
 
 group = "org.gradle"
-version = "0.1"
+version = "0.1-SNAPSHOT"
