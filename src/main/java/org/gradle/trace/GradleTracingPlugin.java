@@ -42,7 +42,7 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
     @Override
     public void apply(Project project) {
-        project.getGradle().getTaskGraph().addTaskExecutionListener(new TaskExecutionListener() {
+        project.getGradle().addListener(new TaskExecutionListener() {
             @Override
             public void beforeExecute(Task task) {
                 started(task.getPath(), "TASK");
@@ -51,13 +51,6 @@ public class GradleTracingPlugin implements Plugin<Project> {
             @Override
             public void afterExecute(Task task, TaskState taskState) {
                 finished(task.getPath(), "TASK");
-            }
-        });
-
-        project.getGradle().getTaskGraph().whenReady(new Action<TaskExecutionGraph>() {
-            @Override
-            public void execute(TaskExecutionGraph taskExecutionGraph) {
-                finished(BUILD_TASK_GRAPH, "PHASE");
             }
         });
 
@@ -85,7 +78,14 @@ public class GradleTracingPlugin implements Plugin<Project> {
             }
         });
 
-        project.getGradle().addBuildListener(new JsonAdapter(project.getBuildDir()));
+        project.getGradle().getTaskGraph().whenReady(new Action<TaskExecutionGraph>() {
+            @Override
+            public void execute(TaskExecutionGraph taskExecutionGraph) {
+                finished(BUILD_TASK_GRAPH, "PHASE");
+            }
+        });
+
+        project.getGradle().addListener(new JsonAdapter(project.getBuildDir()));
     }
 
     private PrintWriter getPrintWriter(File jsonFile) {
