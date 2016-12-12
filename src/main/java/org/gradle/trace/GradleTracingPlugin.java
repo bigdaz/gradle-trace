@@ -14,10 +14,12 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.StringJoiner;
 
 public class GradleTracingPlugin implements Plugin<Project> {
-    final List<String> events = new ArrayList<>();
+    final List<TraceEvent> events = new ArrayList<>();
     private long startTimeStamp;
 
     @Override
@@ -27,12 +29,12 @@ public class GradleTracingPlugin implements Plugin<Project> {
         project.getGradle().getTaskGraph().addTaskExecutionListener(new TaskExecutionListener() {
             @Override
             public void beforeExecute(Task task) {
-                events.add("{\"name\": \"" + task.getPath() + "\", \"cat\": \"PERF\", \"ph\": \"B\", \"pid\": 0, \"tid\": " + Thread.currentThread().getId() + ", \"ts\": " + getTimestamp() + "}");
+                events.add(TraceEvent.started(task.getPath(), "TASK"));
             }
 
             @Override
             public void afterExecute(Task task, TaskState taskState) {
-                events.add("{\"name\": \"" + task.getPath() + "\", \"cat\": \"PERF\", \"ph\": \"E\", \"pid\": 0, \"tid\": " + Thread.currentThread().getId() + ", \"ts\": " + getTimestamp() + "}");
+                events.add(TraceEvent.finished(task.getPath(), "TASK"));
             }
         });
 
@@ -61,7 +63,12 @@ public class GradleTracingPlugin implements Plugin<Project> {
             writer.println("{\n" +
                     "  \"traceEvents\": [\n");
 
-            writer.println(String.join(",", events));
+            Iterator<TraceEvent> itr = events.iterator();
+            while (itr.hasNext()) {
+                writer.print(itr.next().toString());
+                writer.println(itr.hasNext() ? "," : "");
+            }
+
             writer.println("],\n" +
                     "  \"displayTimeUnit\": \"ns\",\n" +
                     "  \"systemTraceEvents\": \"SystemTraceData\",\n" +
@@ -76,9 +83,5 @@ public class GradleTracingPlugin implements Plugin<Project> {
         File jsonDir = new File(buildDir, "trace");
         jsonDir.mkdirs();
         return new File(jsonDir, "task-trace.json");
-    }
-
-    private long getTimestamp() {
-        return (System.nanoTime() - startTimeStamp) / 1000;
     }
 }
