@@ -13,10 +13,7 @@ import org.gradle.initialization.BuildRequestMetaData;
 import org.gradle.internal.UncheckedException;
 
 import javax.inject.Inject;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.PrintWriter;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -88,14 +85,6 @@ public class GradleTracingPlugin implements Plugin<Project> {
         project.getGradle().addListener(new JsonAdapter(project.getBuildDir()));
     }
 
-    private PrintWriter getPrintWriter(File jsonFile) {
-        try {
-            return new PrintWriter(new FileWriter(jsonFile), true);
-        } catch (IOException e) {
-            throw UncheckedException.throwAsUncheckedException(e);
-        }
-    }
-
     private class JsonAdapter extends BuildAdapter {
         public static final String BUILD_DURATION = "build duration";
         private final File buildDir;
@@ -111,35 +100,62 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
         @Override
         public void buildFinished(BuildResult result) {
-            File traceFile = getTraceFile(buildDir);
-            PrintWriter writer = getPrintWriter(traceFile);
-            writer.println("{\n" +
-                    "  \"traceEvents\": [\n");
-
-
             events.add(TraceEvent.started(BUILD_DURATION, "PHASE", toNanoTime(buildRequestMetaData.getBuildTimeClock().getStartTime())));
             finished(BUILD_DURATION, "PHASE");
 
-            Iterator<TraceEvent> itr = events.iterator();
-            while (itr.hasNext()) {
-                writer.print(itr.next().toString());
-                writer.println(itr.hasNext() ? "," : "");
-            }
+            File traceFile = getTraceFile(buildDir);
 
-            writer.println("],\n" +
-                    "  \"displayTimeUnit\": \"ns\",\n" +
-                    "  \"systemTraceEvents\": \"SystemTraceData\",\n" +
-                    "  \"otherData\": {\n" +
-                    "    \"version\": \"My Application v1.0\"\n" +
-                    "  }\n" +
-                    "}\n");
+            appendResourceToFile("/trace-header.html", traceFile);
+            writeEvents(traceFile);
+            appendResourceToFile("/trace-footer.html", traceFile);
         }
+
+        private void appendResourceToFile(String resourcePath, File traceFile) {
+            try(OutputStream out = new FileOutputStream(traceFile, true);
+                InputStream in = getClass().getResourceAsStream(resourcePath)) {
+                byte[] buffer = new byte[1024];
+                int len;
+                while ((len = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, len);
+                }
+                } catch (IOException e) {
+                throw UncheckedException.throwAsUncheckedException(e);
+            }
+        }
+    }
+
+    private void writeEvents(File traceFile) {
+        PrintWriter writer = getPrintWriter(traceFile);
+        writer.println("{\n" +
+                "  \"traceEvents\": [\n");
+
+        Iterator<TraceEvent> itr = events.iterator();
+        while (itr.hasNext()) {
+            writer.print(itr.next().toString());
+            writer.println(itr.hasNext() ? "," : "");
+        }
+
+        writer.println("],\n" +
+                "  \"displayTimeUnit\": \"ns\",\n" +
+                "  \"systemTraceEvents\": \"SystemTraceData\",\n" +
+                "  \"otherData\": {\n" +
+                "    \"version\": \"My Application v1.0\"\n" +
+                "  }\n" +
+                "}\n");
     }
 
     private File getTraceFile(File buildDir) {
         File jsonDir = new File(buildDir, "trace");
         jsonDir.mkdirs();
-        return new File(jsonDir, "task-trace.json");
+        return new File(jsonDir, "task-trace.html");
+    }
+
+    private PrintWriter getPrintWriter(File jsonFile) {
+        try {
+            return new PrintWriter(new FileWriter(jsonFile, true), true);
+        } catch (IOException e) {
+            throw UncheckedException.throwAsUncheckedException(e);
+        }
     }
 
     private long toNanoTime(long timeInMillis) {
