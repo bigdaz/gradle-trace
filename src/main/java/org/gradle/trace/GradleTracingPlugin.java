@@ -1,3 +1,4 @@
+package org.gradle.trace;
 
 import org.gradle.BuildAdapter;
 import org.gradle.BuildResult;
