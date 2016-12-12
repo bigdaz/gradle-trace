@@ -6,6 +6,8 @@ import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.artifacts.DependencyResolutionListener;
+import org.gradle.api.artifacts.ResolvableDependencies;
 import org.gradle.api.execution.TaskExecutionGraph;
 import org.gradle.api.execution.TaskExecutionListener;
 import org.gradle.api.invocation.Gradle;
@@ -33,24 +35,44 @@ public class GradleTracingPlugin implements Plugin<Project> {
         this.buildRequestMetaData = buildRequestMetaData;
     }
 
+    private void started(String name, String category) {
+        events.add(TraceEvent.started(name, category));
+    }
+
+    private boolean finished(String name, String category) {
+        return events.add(TraceEvent.finished(name, category));
+    }
+
     @Override
     public void apply(Project project) {
         project.getGradle().getTaskGraph().addTaskExecutionListener(new TaskExecutionListener() {
             @Override
             public void beforeExecute(Task task) {
-                events.add(TraceEvent.started(task.getPath(), "TASK"));
+                started(task.getPath(), "TASK");
             }
 
             @Override
             public void afterExecute(Task task, TaskState taskState) {
-                events.add(TraceEvent.finished(task.getPath(), "TASK"));
+                finished(task.getPath(), "TASK");
             }
         });
 
         project.getGradle().getTaskGraph().whenReady(new Action<TaskExecutionGraph>() {
             @Override
             public void execute(TaskExecutionGraph taskExecutionGraph) {
-                events.add(TraceEvent.finished(BUILD_TASK_GRAPH, "PHASE"));
+                finished(BUILD_TASK_GRAPH, "PHASE");
+            }
+        });
+
+        project.getGradle().addListener(new DependencyResolutionListener() {
+            @Override
+            public void beforeResolve(ResolvableDependencies resolvableDependencies) {
+                started(resolvableDependencies.getPath(), "RESOLVE");
+            }
+
+            @Override
+            public void afterResolve(ResolvableDependencies resolvableDependencies) {
+                finished(resolvableDependencies.getPath(), "RESOLVE");
             }
         });
 
@@ -75,7 +97,7 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
         @Override
         public void projectsEvaluated(Gradle gradle) {
-            events.add(TraceEvent.started(BUILD_TASK_GRAPH, "PHASE"));
+            started(BUILD_TASK_GRAPH, "PHASE");
         }
 
         @Override
@@ -87,7 +109,7 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
 
             events.add(TraceEvent.started(BUILD_DURATION, "PHASE", toNanoTime(buildRequestMetaData.getBuildTimeClock().getStartTime())));
-            events.add(TraceEvent.finished(BUILD_DURATION, "PHASE"));
+            finished(BUILD_DURATION, "PHASE");
 
             Iterator<TraceEvent> itr = events.iterator();
             while (itr.hasNext()) {
