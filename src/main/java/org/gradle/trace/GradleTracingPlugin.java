@@ -10,8 +10,10 @@ import org.gradle.api.execution.TaskExecutionGraph;
 import org.gradle.api.execution.TaskExecutionListener;
 import org.gradle.api.invocation.Gradle;
 import org.gradle.api.tasks.TaskState;
+import org.gradle.initialization.BuildRequestMetaData;
 import org.gradle.internal.UncheckedException;
 
+import javax.inject.Inject;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -19,10 +21,17 @@ import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class GradleTracingPlugin implements Plugin<Project> {
+    private final BuildRequestMetaData buildRequestMetaData;
     public static final String BUILD_TASK_GRAPH = "build task graph";
     final List<TraceEvent> events = new ArrayList<>();
+
+    @Inject
+    public GradleTracingPlugin(BuildRequestMetaData buildRequestMetaData) {
+        this.buildRequestMetaData = buildRequestMetaData;
+    }
 
     @Override
     public void apply(Project project) {
@@ -57,6 +66,7 @@ public class GradleTracingPlugin implements Plugin<Project> {
     }
 
     private class JsonAdapter extends BuildAdapter {
+        public static final String BUILD_DURATION = "build duration";
         private final File buildDir;
 
         public JsonAdapter(File buildDir) {
@@ -74,6 +84,10 @@ public class GradleTracingPlugin implements Plugin<Project> {
             PrintWriter writer = getPrintWriter(traceFile);
             writer.println("{\n" +
                     "  \"traceEvents\": [\n");
+
+
+            events.add(TraceEvent.started(BUILD_DURATION, "PHASE", toNanoTime(buildRequestMetaData.getBuildTimeClock().getStartTime())));
+            events.add(TraceEvent.finished(BUILD_DURATION, "PHASE"));
 
             Iterator<TraceEvent> itr = events.iterator();
             while (itr.hasNext()) {
@@ -95,5 +109,11 @@ public class GradleTracingPlugin implements Plugin<Project> {
         File jsonDir = new File(buildDir, "trace");
         jsonDir.mkdirs();
         return new File(jsonDir, "task-trace.json");
+    }
+
+    private long toNanoTime(long timeInMillis) {
+        long elapsedMillis = System.currentTimeMillis() - timeInMillis;
+        long elapsedNanos = TimeUnit.MILLISECONDS.toNanos(elapsedMillis);
+        return System.nanoTime() - elapsedNanos;
     }
 }
