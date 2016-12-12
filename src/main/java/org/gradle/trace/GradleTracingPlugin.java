@@ -2,10 +2,13 @@ package org.gradle.trace;
 
 import org.gradle.BuildAdapter;
 import org.gradle.BuildResult;
+import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.execution.TaskExecutionGraph;
 import org.gradle.api.execution.TaskExecutionListener;
+import org.gradle.api.invocation.Gradle;
 import org.gradle.api.tasks.TaskState;
 import org.gradle.internal.UncheckedException;
 
@@ -16,16 +19,13 @@ import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.StringJoiner;
 
 public class GradleTracingPlugin implements Plugin<Project> {
+    public static final String BUILD_TASK_GRAPH = "build task graph";
     final List<TraceEvent> events = new ArrayList<>();
-    private long startTimeStamp;
 
     @Override
     public void apply(Project project) {
-        startTimeStamp = System.nanoTime();
-
         project.getGradle().getTaskGraph().addTaskExecutionListener(new TaskExecutionListener() {
             @Override
             public void beforeExecute(Task task) {
@@ -35,6 +35,13 @@ public class GradleTracingPlugin implements Plugin<Project> {
             @Override
             public void afterExecute(Task task, TaskState taskState) {
                 events.add(TraceEvent.finished(task.getPath(), "TASK"));
+            }
+        });
+
+        project.getGradle().getTaskGraph().whenReady(new Action<TaskExecutionGraph>() {
+            @Override
+            public void execute(TaskExecutionGraph taskExecutionGraph) {
+                events.add(TraceEvent.finished(BUILD_TASK_GRAPH, "PHASE"));
             }
         });
 
@@ -54,6 +61,11 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
         public JsonAdapter(File buildDir) {
             this.buildDir = buildDir;
+        }
+
+        @Override
+        public void projectsEvaluated(Gradle gradle) {
+            events.add(TraceEvent.started(BUILD_TASK_GRAPH, "PHASE"));
         }
 
         @Override
