@@ -25,16 +25,15 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
         final PrintWriter writer = getPrintWriter(jsonFile);
 
-
         project.getGradle().getTaskGraph().addTaskExecutionListener(new TaskExecutionListener() {
             @Override
             public void beforeExecute(Task task) {
-                events.add("{\"name\": \"" + task.getName() + "\", \"cat\": \"PERF\", \"ph\": \"B\", \"pid\": 0, \"tid\": " + Thread.currentThread().getId() + ", \"ts\": " + System.currentTimeMillis() + "}");
+                events.add("{\"name\": \"" + task.getPath() + "\", \"cat\": \"PERF\", \"ph\": \"B\", \"pid\": 0, \"tid\": " + Thread.currentThread().getId() + ", \"ts\": " + System.currentTimeMillis() + "}");
             }
 
             @Override
             public void afterExecute(Task task, TaskState taskState) {
-                events.add("{\"name\": \"" + task.getName() + "\", \"cat\": \"PERF\", \"ph\": \"E\", \"pid\": 0, \"tid\": " + Thread.currentThread().getId() + ", \"ts\": " + System.currentTimeMillis() + "}");
+                events.add("{\"name\": \"" + task.getPath() + "\", \"cat\": \"PERF\", \"ph\": \"E\", \"pid\": 0, \"tid\": " + Thread.currentThread().getId() + ", \"ts\": " + System.currentTimeMillis() + "}");
             }
         });
 
@@ -63,7 +62,7 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
             writer.println(String.join(",", events));
             writer.println("],\n" +
-                    "  \"displayTimeUnit\": \"ms\",\n" +
+                    "  \"displayTimeUnit\": \"ns\",\n" +
                     "  \"systemTraceEvents\": \"SystemTraceData\",\n" +
                     "  \"otherData\": {\n" +
                     "    \"version\": \"My Application v1.0\"\n" +
