@@ -1,0 +1,6 @@
+apply plugin: "java-gradle-plugin"
+apply plugin: "idea"
+
+
+group = "org.gradle"
+version = "0.1"
