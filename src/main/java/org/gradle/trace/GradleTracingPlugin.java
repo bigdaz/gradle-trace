@@ -2,10 +2,7 @@ package org.gradle.trace;
 
 import org.gradle.BuildAdapter;
 import org.gradle.BuildResult;
-import org.gradle.api.Action;
-import org.gradle.api.Plugin;
-import org.gradle.api.Project;
-import org.gradle.api.Task;
+import org.gradle.api.*;
 import org.gradle.api.artifacts.DependencyResolutionListener;
 import org.gradle.api.artifacts.ResolvableDependencies;
 import org.gradle.api.execution.TaskExecutionGraph;
@@ -73,6 +70,18 @@ public class GradleTracingPlugin implements Plugin<Project> {
             @Override
             public void afterResolve(ResolvableDependencies resolvableDependencies) {
                 finished(resolvableDependencies.getPath(), "RESOLVE");
+            }
+        });
+
+        project.getGradle().addListener(new ProjectEvaluationListener() {
+            @Override
+            public void beforeEvaluate(Project project) {
+                started(project.getPath(), "EVALUATE");
+            }
+
+            @Override
+            public void afterEvaluate(Project project, ProjectState projectState) {
+                finished(project.getPath(), "EVALUATE");
             }
         });
 
