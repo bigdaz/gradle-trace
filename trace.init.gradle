@@ -7,6 +7,4 @@ initscript {
     }
 }
 
-rootProject {
-    apply plugin: org.gradle.trace.GradleTracingPlugin
-}
+apply plugin: org.gradle.trace.GradleTracingPlugin

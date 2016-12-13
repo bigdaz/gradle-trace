@@ -21,7 +21,7 @@ import java.io.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-public class GradleTracingPlugin implements Plugin<Project> {
+public class GradleTracingPlugin implements Plugin<Gradle> {
     private static final String CATEGORY_PHASE = "BUILD_PHASE";
     private static final String CATEGORY_EVALUATE = "PROJECT_EVALUATE";
     private static final String CATEGORY_RESOLVE = "CONFIGURATION_RESOLVE";
@@ -49,8 +49,7 @@ public class GradleTracingPlugin implements Plugin<Project> {
     }
 
     @Override
-    public void apply(Project project) {
-        Gradle gradle = project.getGradle();
+    public void apply(Gradle gradle) {
         gradle.addListener(new TaskExecutionListener() {
             @Override
             public void beforeExecute(Task task) {
