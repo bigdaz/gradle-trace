@@ -11,6 +11,10 @@ import org.gradle.api.invocation.Gradle;
 import org.gradle.api.tasks.TaskState;
 import org.gradle.initialization.BuildRequestMetaData;
 import org.gradle.internal.UncheckedException;
+import org.gradle.internal.progress.BuildOperationInternal;
+import org.gradle.internal.progress.InternalBuildListener;
+import org.gradle.internal.progress.OperationResult;
+import org.gradle.internal.progress.OperationStartEvent;
 
 import javax.inject.Inject;
 import java.io.*;
@@ -20,6 +24,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class GradleTracingPlugin implements Plugin<Project> {
+    public static final String BUILD_OPERATION = "BUILD_OPERATION";
     private final BuildRequestMetaData buildRequestMetaData;
     public static final String BUILD_TASK_GRAPH = "build task graph";
     final List<TraceEvent> events = new ArrayList<>();
@@ -29,11 +34,11 @@ public class GradleTracingPlugin implements Plugin<Project> {
         this.buildRequestMetaData = buildRequestMetaData;
     }
 
-    private void started(String name, String category) {
+    private void start(String name, String category) {
         events.add(TraceEvent.started(name, category));
     }
 
-    private boolean finished(String name, String category) {
+    private boolean finish(String name, String category) {
         return events.add(TraceEvent.finished(name, category));
     }
 
@@ -42,43 +47,55 @@ public class GradleTracingPlugin implements Plugin<Project> {
         project.getGradle().addListener(new TaskExecutionListener() {
             @Override
             public void beforeExecute(Task task) {
-                started(task.getPath(), "TASK");
+                start(task.getPath(), "TASK");
             }
 
             @Override
             public void afterExecute(Task task, TaskState taskState) {
-                finished(task.getPath(), "TASK");
+                finish(task.getPath(), "TASK");
             }
         });
 
         project.getGradle().addListener(new DependencyResolutionListener() {
             @Override
             public void beforeResolve(ResolvableDependencies resolvableDependencies) {
-                started(resolvableDependencies.getPath(), "RESOLVE");
+                start(resolvableDependencies.getPath(), "RESOLVE");
             }
 
             @Override
             public void afterResolve(ResolvableDependencies resolvableDependencies) {
-                finished(resolvableDependencies.getPath(), "RESOLVE");
+                finish(resolvableDependencies.getPath(), "RESOLVE");
             }
         });
 
         project.getGradle().addListener(new ProjectEvaluationListener() {
             @Override
             public void beforeEvaluate(Project project) {
-                started(project.getPath(), "EVALUATE");
+                start(project.getPath(), "EVALUATE");
             }
 
             @Override
             public void afterEvaluate(Project project, ProjectState projectState) {
-                finished(project.getPath(), "EVALUATE");
+                finish(project.getPath(), "EVALUATE");
+            }
+        });
+
+        project.getGradle().addListener(new InternalBuildListener() {
+            @Override
+            public void started(BuildOperationInternal buildOperationInternal, OperationStartEvent operationStartEvent) {
+                start(buildOperationInternal.getDisplayName(), BUILD_OPERATION);
+            }
+
+            @Override
+            public void finished(BuildOperationInternal buildOperationInternal, OperationResult operationResult) {
+                finish(buildOperationInternal.getDisplayName(), BUILD_OPERATION);
             }
         });
 
         project.getGradle().getTaskGraph().whenReady(new Action<TaskExecutionGraph>() {
             @Override
             public void execute(TaskExecutionGraph taskExecutionGraph) {
-                finished(BUILD_TASK_GRAPH, "PHASE");
+                finish(BUILD_TASK_GRAPH, "PHASE");
             }
         });
 
@@ -95,23 +112,23 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
         @Override
         public void projectsEvaluated(Gradle gradle) {
-            started(BUILD_TASK_GRAPH, "PHASE");
+            start(BUILD_TASK_GRAPH, "PHASE");
         }
 
         @Override
         public void buildFinished(BuildResult result) {
             events.add(TraceEvent.started(BUILD_DURATION, "PHASE", toNanoTime(buildRequestMetaData.getBuildTimeClock().getStartTime())));
-            finished(BUILD_DURATION, "PHASE");
+            finish(BUILD_DURATION, "PHASE");
 
             File traceFile = getTraceFile(buildDir);
 
-            appendResourceToFile("/trace-header.html", traceFile);
+            appendResourceToFile("/trace-header.html", traceFile, false);
             writeEvents(traceFile);
-            appendResourceToFile("/trace-footer.html", traceFile);
+            appendResourceToFile("/trace-footer.html", traceFile, true);
         }
 
-        private void appendResourceToFile(String resourcePath, File traceFile) {
-            try(OutputStream out = new FileOutputStream(traceFile, true);
+        private void appendResourceToFile(String resourcePath, File traceFile, boolean append) {
+            try(OutputStream out = new FileOutputStream(traceFile, append);
                 InputStream in = getClass().getResourceAsStream(resourcePath)) {
                 byte[] buffer = new byte[1024];
                 int len;
