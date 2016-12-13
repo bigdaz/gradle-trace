@@ -18,9 +18,7 @@ import org.gradle.internal.progress.OperationStartEvent;
 
 import javax.inject.Inject;
 import java.io.*;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 public class GradleTracingPlugin implements Plugin<Project> {
@@ -32,7 +30,7 @@ public class GradleTracingPlugin implements Plugin<Project> {
     private static final String PHASE_BUILD = "build duration";
     private static final String PHASE_BUILD_TASK_GRAPH = "build task graph";
     private final BuildRequestMetaData buildRequestMetaData;
-    private final List<TraceEvent> events = new ArrayList<>();
+    private final Map<String, TraceEvent> events = new LinkedHashMap<>();
 
     @Inject
     public GradleTracingPlugin(BuildRequestMetaData buildRequestMetaData) {
@@ -40,11 +38,14 @@ public class GradleTracingPlugin implements Plugin<Project> {
     }
 
     private void start(String name, String category) {
-        events.add(TraceEvent.started(name, category));
+        events.put(name, TraceEvent.started(name, category));
     }
 
-    private boolean finish(String name, String category) {
-        return events.add(TraceEvent.finished(name, category));
+    private void finish(String name) {
+        TraceEvent event = events.get(name);
+        if (event != null) {
+            event.finished();
+        }
     }
 
     @Override
@@ -58,7 +59,7 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
             @Override
             public void afterExecute(Task task, TaskState taskState) {
-                finish(task.getPath(), CATEGORY_TASK);
+                finish(task.getPath());
             }
         });
 
@@ -70,7 +71,7 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
             @Override
             public void afterResolve(ResolvableDependencies resolvableDependencies) {
-                finish(resolvableDependencies.getPath(), CATEGORY_RESOLVE);
+                finish(resolvableDependencies.getPath());
             }
         });
 
@@ -82,7 +83,7 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
             @Override
             public void afterEvaluate(Project project, ProjectState projectState) {
-                finish(project.getPath(), CATEGORY_EVALUATE);
+                finish(project.getPath());
             }
         });
 
@@ -94,14 +95,14 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
             @Override
             public void finished(BuildOperationInternal buildOperationInternal, OperationResult operationResult) {
-                finish(buildOperationInternal.getDisplayName(), CATEGORY_OPERATION);
+                finish(buildOperationInternal.getDisplayName());
             }
         });
 
         gradle.getTaskGraph().whenReady(new Action<TaskExecutionGraph>() {
             @Override
             public void execute(TaskExecutionGraph taskExecutionGraph) {
-                finish(PHASE_BUILD_TASK_GRAPH, CATEGORY_PHASE);
+                finish(PHASE_BUILD_TASK_GRAPH);
             }
         });
 
@@ -123,8 +124,9 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
         @Override
         public void buildFinished(BuildResult result) {
-            events.add(0, TraceEvent.started(PHASE_BUILD, CATEGORY_PHASE, toNanoTime(buildRequestMetaData.getBuildTimeClock().getStartTime())));
-            finish(PHASE_BUILD, CATEGORY_PHASE);
+            TraceEvent overallBuild = TraceEvent.started(PHASE_BUILD, CATEGORY_PHASE, toNanoTime(buildRequestMetaData.getBuildTimeClock().getStartTime()));
+            overallBuild.finished();
+            events.put(PHASE_BUILD, overallBuild);
 
             File traceFile = getTraceFile(getBuildDir());
 
@@ -158,7 +160,7 @@ public class GradleTracingPlugin implements Plugin<Project> {
         writer.println("{\n" +
                 "  \"traceEvents\": [\n");
 
-        Iterator<TraceEvent> itr = events.iterator();
+        Iterator<TraceEvent> itr = events.values().iterator();
         while (itr.hasNext()) {
             writer.print(itr.next().toString());
             writer.println(itr.hasNext() ? "," : "");
