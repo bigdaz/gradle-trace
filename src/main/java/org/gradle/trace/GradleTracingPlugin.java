@@ -24,10 +24,15 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class GradleTracingPlugin implements Plugin<Project> {
-    public static final String BUILD_OPERATION = "BUILD_OPERATION";
+    private static final String CATEGORY_PHASE = "BUILD_PHASE";
+    private static final String CATEGORY_EVALUATE = "PROJECT_EVALUATE";
+    private static final String CATEGORY_RESOLVE = "CONFIGURATION_RESOLVE";
+    private static final String CATEGORY_TASK = "TASK_EXECUTE";
+    private static final String CATEGORY_OPERATION = "BUILD_OPERATION";
+    private static final String PHASE_BUILD = "build duration";
+    private static final String PHASE_BUILD_TASK_GRAPH = "build task graph";
     private final BuildRequestMetaData buildRequestMetaData;
-    public static final String BUILD_TASK_GRAPH = "build task graph";
-    final List<TraceEvent> events = new ArrayList<>();
+    private final List<TraceEvent> events = new ArrayList<>();
 
     @Inject
     public GradleTracingPlugin(BuildRequestMetaData buildRequestMetaData) {
@@ -44,90 +49,93 @@ public class GradleTracingPlugin implements Plugin<Project> {
 
     @Override
     public void apply(Project project) {
-        project.getGradle().addListener(new TaskExecutionListener() {
+        Gradle gradle = project.getGradle();
+        gradle.addListener(new TaskExecutionListener() {
             @Override
             public void beforeExecute(Task task) {
-                start(task.getPath(), "TASK");
+                start(task.getPath(), CATEGORY_TASK);
             }
 
             @Override
             public void afterExecute(Task task, TaskState taskState) {
-                finish(task.getPath(), "TASK");
+                finish(task.getPath(), CATEGORY_TASK);
             }
         });
 
-        project.getGradle().addListener(new DependencyResolutionListener() {
+        gradle.addListener(new DependencyResolutionListener() {
             @Override
             public void beforeResolve(ResolvableDependencies resolvableDependencies) {
-                start(resolvableDependencies.getPath(), "RESOLVE");
+                start(resolvableDependencies.getPath(), CATEGORY_RESOLVE);
             }
 
             @Override
             public void afterResolve(ResolvableDependencies resolvableDependencies) {
-                finish(resolvableDependencies.getPath(), "RESOLVE");
+                finish(resolvableDependencies.getPath(), CATEGORY_RESOLVE);
             }
         });
 
-        project.getGradle().addListener(new ProjectEvaluationListener() {
+        gradle.addListener(new ProjectEvaluationListener() {
             @Override
             public void beforeEvaluate(Project project) {
-                start(project.getPath(), "EVALUATE");
+                start(project.getPath(), CATEGORY_EVALUATE);
             }
 
             @Override
             public void afterEvaluate(Project project, ProjectState projectState) {
-                finish(project.getPath(), "EVALUATE");
+                finish(project.getPath(), CATEGORY_EVALUATE);
             }
         });
 
-        project.getGradle().addListener(new InternalBuildListener() {
+        gradle.addListener(new InternalBuildListener() {
             @Override
             public void started(BuildOperationInternal buildOperationInternal, OperationStartEvent operationStartEvent) {
-                start(buildOperationInternal.getDisplayName(), BUILD_OPERATION);
+                start(buildOperationInternal.getDisplayName(), CATEGORY_OPERATION);
             }
 
             @Override
             public void finished(BuildOperationInternal buildOperationInternal, OperationResult operationResult) {
-                finish(buildOperationInternal.getDisplayName(), BUILD_OPERATION);
+                finish(buildOperationInternal.getDisplayName(), CATEGORY_OPERATION);
             }
         });
 
-        project.getGradle().getTaskGraph().whenReady(new Action<TaskExecutionGraph>() {
+        gradle.getTaskGraph().whenReady(new Action<TaskExecutionGraph>() {
             @Override
             public void execute(TaskExecutionGraph taskExecutionGraph) {
-                finish(BUILD_TASK_GRAPH, "PHASE");
+                finish(PHASE_BUILD_TASK_GRAPH, CATEGORY_PHASE);
             }
         });
 
-        project.getGradle().addListener(new JsonAdapter(project.getBuildDir()));
+        gradle.getGradle().addListener(new JsonAdapter(gradle));
     }
 
     private class JsonAdapter extends BuildAdapter {
-        public static final String BUILD_DURATION = "build duration";
-        private final File buildDir;
+        private final Gradle gradle;
 
-        public JsonAdapter(File buildDir) {
-            this.buildDir = buildDir;
+        private JsonAdapter(Gradle gradle) {
+            this.gradle = gradle;
         }
 
         @Override
         public void projectsEvaluated(Gradle gradle) {
-            start(BUILD_TASK_GRAPH, "PHASE");
+            start(PHASE_BUILD_TASK_GRAPH, CATEGORY_PHASE);
+            System.out.println("START TASK GRAPH");
         }
 
         @Override
         public void buildFinished(BuildResult result) {
-            events.add(TraceEvent.started(BUILD_DURATION, "PHASE", toNanoTime(buildRequestMetaData.getBuildTimeClock().getStartTime())));
-            finish(BUILD_DURATION, "PHASE");
+            events.add(0, TraceEvent.started(PHASE_BUILD, CATEGORY_PHASE, toNanoTime(buildRequestMetaData.getBuildTimeClock().getStartTime())));
+            finish(PHASE_BUILD, CATEGORY_PHASE);
 
-            File traceFile = getTraceFile(buildDir);
+            File traceFile = getTraceFile(getBuildDir());
 
-            appendResourceToFile("/trace-header.html", traceFile, false);
+            copyResourceToFile("/trace-header.html", traceFile, false);
             writeEvents(traceFile);
-            appendResourceToFile("/trace-footer.html", traceFile, true);
+            copyResourceToFile("/trace-footer.html", traceFile, true);
+
+            result.getGradle().getRootProject().getLogger().lifecycle("Trace written to file://" + traceFile.getAbsolutePath());
         }
 
-        private void appendResourceToFile(String resourcePath, File traceFile, boolean append) {
+        private void copyResourceToFile(String resourcePath, File traceFile, boolean append) {
             try(OutputStream out = new FileOutputStream(traceFile, append);
                 InputStream in = getClass().getResourceAsStream(resourcePath)) {
                 byte[] buffer = new byte[1024];
@@ -138,6 +146,10 @@ public class GradleTracingPlugin implements Plugin<Project> {
                 } catch (IOException e) {
                 throw UncheckedException.throwAsUncheckedException(e);
             }
+        }
+
+        private File getBuildDir() {
+            return gradle.getRootProject().getBuildDir();
         }
     }
 
@@ -162,9 +174,9 @@ public class GradleTracingPlugin implements Plugin<Project> {
     }
 
     private File getTraceFile(File buildDir) {
-        File jsonDir = new File(buildDir, "trace");
-        jsonDir.mkdirs();
-        return new File(jsonDir, "task-trace.html");
+        File traceFile = new File(buildDir, "trace/task-trace.html");
+        traceFile.getParentFile().mkdirs();
+        return traceFile;
     }
 
     private PrintWriter getPrintWriter(File jsonFile) {
